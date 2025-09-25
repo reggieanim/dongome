@@ -1,0 +1,121 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: dongome_postgres
+    environment:
+      POSTGRES_DB: dongome_db
+      POSTGRES_USER: dongome
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - dongome-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: dongome_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - dongome-network
+    command: redis-server --appendonly yes
+
+  nats:
+    image: nats:2.10-alpine
+    container_name: dongome_nats
+    ports:
+      - "4222:4222"  # Client connections
+      - "8222:8222"  # HTTP monitoring
+      - "6222:6222"  # Routing port for clustering
+    networks:
+      - dongome-network
+    command: 
+      - "--jetstream"
+      - "--store_dir=/data"
+      - "--http_port=8222"
+    volumes:
+      - nats_data:/data
+
+  # Optional: NATS Management UI
+  nats-box:
+    image: natsio/nats-box:latest
+    container_name: dongome_nats_box
+    depends_on:
+      - nats
+    networks:
+      - dongome-network
+    tty: true
+    stdin_open: true
+
+  # Application services
+  dongome-api:
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile.api
+    container_name: dongome_api
+    environment:
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8080
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=dongome
+      - DB_PASSWORD=password
+      - DB_NAME=dongome_db
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - NATS_URL=nats://nats:4222
+      - JWT_SECRET=your-super-secret-jwt-key-here
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - redis
+      - nats
+    networks:
+      - dongome-network
+    volumes:
+      - ./config:/app/config
+    restart: unless-stopped
+
+  dongome-worker:
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile.worker
+    container_name: dongome_worker
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=dongome
+      - DB_PASSWORD=password
+      - DB_NAME=dongome_db
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - NATS_URL=nats://nats:4222
+    depends_on:
+      - postgres
+      - redis
+      - nats
+    networks:
+      - dongome-network
+    volumes:
+      - ./config:/app/config
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  nats_data:
+    driver: local
+
+networks:
+  dongome-network:
+    driver: bridge

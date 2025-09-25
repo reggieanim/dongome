@@ -1,0 +1,32 @@
+# Build stage
+FROM golang:1.22-alpine AS builder
+
+WORKDIR /app
+
+# Copy go mod files
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build the worker binary
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o dongome-worker ./cmd/worker
+
+# Final stage
+FROM alpine:latest
+
+RUN apk --no-cache add ca-certificates
+WORKDIR /root/
+
+# Copy the binary from builder stage
+COPY --from=builder /app/dongome-worker .
+
+# Copy config files
+COPY --from=builder /app/config ./config
+
+# Create non-root user
+RUN adduser -D -s /bin/sh dongome
+USER dongome
+
+CMD ["./dongome-worker"]
