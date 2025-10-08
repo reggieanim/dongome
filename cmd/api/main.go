@@ -19,6 +19,7 @@ import (
 	"dongome/pkg/logger"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 func main() {
@@ -36,7 +37,7 @@ func main() {
 	// Initialize database
 	database, err := db.NewDatabase(&cfg.Database)
 	if err != nil {
-		logger.Fatal("Failed to connect to database", logger.Logger.Error(err))
+		logger.Fatal("Failed to connect to database", zap.Error(err))
 	}
 	defer database.Close()
 
@@ -45,13 +46,13 @@ func main() {
 		&domain.User{},
 		&domain.SellerProfile{},
 	); err != nil {
-		logger.Fatal("Failed to migrate database", logger.Logger.Error(err))
+		logger.Fatal("Failed to migrate database", zap.Error(err))
 	}
 
 	// Initialize NATS event bus
 	eventBus, err := events.NewNATSEventBus(cfg.NATS.URL)
 	if err != nil {
-		logger.Fatal("Failed to connect to NATS", logger.Logger.Error(err))
+		logger.Fatal("Failed to connect to NATS", zap.Error(err))
 	}
 	defer eventBus.Close()
 
@@ -101,7 +102,7 @@ func main() {
 	go func() {
 		logger.Info(fmt.Sprintf("Server starting on port %s", cfg.Server.Port))
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Fatal("Failed to start server", logger.Logger.Error(err))
+			logger.Fatal("Failed to start server", zap.Error(err))
 		}
 	}()
 
@@ -120,7 +121,7 @@ func main() {
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
-		logger.Fatal("Server forced to shutdown", logger.Logger.Error(err))
+		logger.Fatal("Server forced to shutdown", zap.Error(err))
 	}
 
 	logger.Info("Server shutdown complete")
@@ -131,13 +132,13 @@ func setupEventSubscriptions(eventBus events.EventBus) {
 	// Subscribe to UserRegistered events for notifications
 	err := eventBus.Subscribe(domain.UserRegisteredEvent, handleUserRegistered)
 	if err != nil {
-		logger.Error("Failed to subscribe to UserRegistered events", logger.Logger.Error(err))
+		logger.Error("Failed to subscribe to UserRegistered events", zap.Error(err))
 	}
 
 	// Subscribe to UserEmailVerified events
 	err = eventBus.Subscribe(domain.UserEmailVerifiedEvent, handleUserEmailVerified)
 	if err != nil {
-		logger.Error("Failed to subscribe to UserEmailVerified events", logger.Logger.Error(err))
+		logger.Error("Failed to subscribe to UserEmailVerified events", zap.Error(err))
 	}
 
 	logger.Info("Event subscriptions setup complete")
@@ -146,8 +147,8 @@ func setupEventSubscriptions(eventBus events.EventBus) {
 // Event handlers for demonstration of cross-bounded context communication
 func handleUserRegistered(ctx context.Context, event *events.Event) error {
 	logger.Info("Handling UserRegistered event",
-		logger.Logger.String("event_id", event.ID),
-		logger.Logger.String("user_id", event.AggregateID))
+		zap.String("event_id", event.ID),
+		zap.String("user_id", event.AggregateID))
 
 	var userData domain.UserRegistered
 	if err := events.ParseEventData(event, &userData); err != nil {
@@ -161,8 +162,8 @@ func handleUserRegistered(ctx context.Context, event *events.Event) error {
 	// 4. Add to analytics/metrics
 
 	logger.Info("UserRegistered event processed successfully",
-		logger.Logger.String("user_email", userData.Email),
-		logger.Logger.String("user_name", userData.FirstName+" "+userData.LastName))
+		zap.String("user_email", userData.Email),
+		zap.String("user_name", userData.FirstName+" "+userData.LastName))
 
 	// Simulate sending welcome email
 	// emailService.SendWelcomeEmail(userData.Email, userData.VerificationToken)
@@ -172,8 +173,8 @@ func handleUserRegistered(ctx context.Context, event *events.Event) error {
 
 func handleUserEmailVerified(ctx context.Context, event *events.Event) error {
 	logger.Info("Handling UserEmailVerified event",
-		logger.Logger.String("event_id", event.ID),
-		logger.Logger.String("user_id", event.AggregateID))
+		zap.String("event_id", event.ID),
+		zap.String("user_id", event.AggregateID))
 
 	var userData domain.UserEmailVerified
 	if err := events.ParseEventData(event, &userData); err != nil {
@@ -187,7 +188,7 @@ func handleUserEmailVerified(ctx context.Context, event *events.Event) error {
 	// 4. Update analytics
 
 	logger.Info("UserEmailVerified event processed successfully",
-		logger.Logger.String("user_email", userData.Email))
+		zap.String("user_email", userData.Email))
 
 	return nil
 }
